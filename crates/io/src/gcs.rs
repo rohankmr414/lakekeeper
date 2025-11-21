@@ -76,12 +76,13 @@ impl GCSSettings {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        let config = ClientConfig {
-            http: Some(mid_client),
-            ..ClientConfig::default()
-        };
+        // Start with a DEFAULT config for Authentication
+        // We do not inject 'mid_client' yet. We let the auth library use its
+        // internal default client to ensure the handshake (Metadata/OAuth) works reliably.
+        let config = ClientConfig::default();
 
-        let config = match auth {
+        // Perform Authentication
+        let mut config = match auth {
             GcsAuth::GcpSystemIdentity {} => {
                 config
                     .with_auth()
@@ -101,6 +102,11 @@ impl GCSSettings {
                     source: Some(e.into()),
                 })?,
         };
+
+        // Inject the middleware client AFTER authentication is resolved.
+        // This ensures the middleware is used for Storage API calls,
+        // but doesn't interfere with the initial token fetch.
+        config.http = Some(mid_client);
 
         Ok(Client::new(config))
     }
